@@ -267,13 +267,13 @@ struct UniformVs
     glEnableVertexAttribArray(ATTRIB_VERTEX);
     glVertexAttribPointer(ATTRIB_VERTEX, 3, GL_FLOAT, GL_FALSE, sizeof(ModelVertex), BUFFER_OFFSET(offsetof(ModelVertex, position)));
     glEnableVertexAttribArray(ATTRIB_NORMAL);
-    glVertexAttribPointer(ATTRIB_NORMAL, 3, GL_FLOAT, GL_FALSE, sizeof(ModelVertex), BUFFER_OFFSET(offsetof(ModelVertex, normal)));
+    glVertexAttribPointer(ATTRIB_NORMAL, 3, GL_SHORT, GL_TRUE, sizeof(ModelVertex), BUFFER_OFFSET(offsetof(ModelVertex, normal)));
     glEnableVertexAttribArray(ATTRIB_TEXCOORD0);
-    glVertexAttribPointer(ATTRIB_TEXCOORD0, 2, GL_FLOAT, GL_FALSE, sizeof(ModelVertex), BUFFER_OFFSET(offsetof(ModelVertex, uv0)));
+    glVertexAttribPointer(ATTRIB_TEXCOORD0, 2, GL_SHORT, GL_TRUE, sizeof(ModelVertex), BUFFER_OFFSET(offsetof(ModelVertex, uv0)));
     glEnableVertexAttribArray(ATTRIB_BONE_INDEX);
     glVertexAttribIPointer(ATTRIB_BONE_INDEX, 4, GL_UNSIGNED_BYTE, sizeof(ModelVertex), BUFFER_OFFSET(offsetof(ModelVertex, boneIndex)));
     glEnableVertexAttribArray(ATTRIB_BONE_WEIGHT);
-    glVertexAttribPointer(ATTRIB_BONE_WEIGHT, 4, GL_FLOAT, GL_FALSE, sizeof(ModelVertex), BUFFER_OFFSET(offsetof(ModelVertex, boneWeight)));
+    glVertexAttribPointer(ATTRIB_BONE_WEIGHT, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(ModelVertex), BUFFER_OFFSET(offsetof(ModelVertex, boneWeight)));
     
     glGenBuffers(1, &mesh.indexBuffer);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.indexBuffer);
@@ -299,6 +299,32 @@ struct UniformVs
 - (void)tearDownGL
 {
   [EAGLContext setCurrentContext:self.context];
+  
+  glDeleteProgram(_programSkin);
+  glDeleteProgram(_programCloth);
+  glDeleteBuffers(1, &_uniformBufferVs);
+  
+  for (auto& pair : _textureDictionary)
+  {
+    glDeleteTextures(1, &pair.second);
+  }
+  for (auto& material : _materialList)
+  {
+    glDeleteSamplers(1, &material.clampSampler);
+    glDeleteSamplers(1, &material.repeatSampler);
+  }
+  for (auto& mesh : _opacityMeshList)
+  {
+    glDeleteBuffers(1, &mesh.indexBuffer);
+    glDeleteBuffers(1, &mesh.vertexBuffer);
+    glDeleteVertexArrays(1, &mesh.vertexArray);
+  }
+  for (auto& mesh : _transparencyMeshList)
+  {
+    glDeleteBuffers(1, &mesh.indexBuffer);
+    glDeleteBuffers(1, &mesh.vertexBuffer);
+    glDeleteVertexArrays(1, &mesh.vertexArray);
+  }
   
   _fbxLoader.Finalize();
 }

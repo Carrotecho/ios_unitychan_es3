@@ -372,13 +372,67 @@ bool FBXLoader::LoadAnimation(const char* filepath)
   this->animationEndFrame = (importOffset.Get() + stopTime.Get()) / FbxTime::GetOneFrameValue(FbxTime::eFrames60);
   importer->Destroy();
   
+  auto animStack = this->fbxSceneAnimation->GetSrcObject<FbxAnimStack>();
+  auto animLayerCount = animStack->GetMemberCount<FbxAnimLayer>();
+  assert(animStackCount == 1);
+  
+  auto animLayer = animStack->GetMember<FbxAnimLayer>();
+  
   // ノード名からノードIDを取得できるように辞書に登録
   auto nodeCount = this->fbxSceneAnimation->GetNodeCount();
   printf("animationNodeCount: %d\n", nodeCount);
+  
+  auto viewCurve = [](FbxAnimCurve* curve)
+  {
+    if (curve == nullptr)
+    {
+      return;
+    }
+    
+    auto keyCount = curve->KeyGetCount();
+    
+    for (int j = 0; j < keyCount; ++j)
+    {
+      auto key = curve->KeyGet(j);
+      auto time = key.GetTime();
+      auto value = key.GetValue();
+      auto interpolation = key.GetInterpolation();
+      auto rightSlope = key.GetDataFloat(FbxAnimCurveDef::eRightSlope);
+      auto nextLeftSlope = key.GetDataFloat(FbxAnimCurveDef::eNextLeftSlope);
+      auto tangentMode = key.GetTangentMode();
+      auto tangentWeightMode = key.GetTangentWeightMode();
+      auto tangentVelocityMode = key.GetTangentVelocityMode();
+      
+      printf("%d: [%f, %f, %f, %f]\n", j, (float)time.Get() / FbxTime::GetOneFrameValue(), value, rightSlope, nextLeftSlope);
+    }
+  };
+  
   for (int i = 0; i < nodeCount; ++i)
   {
     auto fbxNode = this->fbxSceneAnimation->GetNode(i);
     this->nodeIdDictionaryAnimation.insert({fbxNode->GetName(), i});
+    
+    printf("node: %s\n", fbxNode->GetName());
+    printf("trans x\n");
+    viewCurve(fbxNode->LclTranslation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_X));
+    printf("trans y\n");
+    viewCurve(fbxNode->LclTranslation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Y));
+    printf("trans z\n");
+    viewCurve(fbxNode->LclTranslation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Z));
+    
+    printf("rot x\n");
+    viewCurve(fbxNode->LclRotation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_X));
+    printf("rot y\n");
+    viewCurve(fbxNode->LclRotation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Y));
+    printf("rot z\n");
+    viewCurve(fbxNode->LclRotation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Z));
+    
+    printf("scale x\n");
+    viewCurve(fbxNode->LclScaling.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_X));
+    printf("scale y\n");
+    viewCurve(fbxNode->LclScaling.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Y));
+    printf("scale z\n");
+    viewCurve(fbxNode->LclScaling.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Z));
   }
   
   return true;
@@ -433,26 +487,40 @@ ModelMesh FBXLoader::ParseMesh(FbxMesh* mesh)
   {
     ModelVertex vertex;
     vertex.position = positionList[i];
-    vertex.normal = normalList[i];
-    vertex.uv0 = (uv0List.size() == 0)
-    ? GLKVector2Make(0.0f, 0.0f)
-    : uv0List[i];
+    for (int j = 0; j < 3; ++j)
+    {
+      vertex.normal[j] = normalList[i].v[j] * std::numeric_limits<int16_t>::max();
+    }
+    
+    if (uv0List.size() == 0)
+    {
+      vertex.uv0[0] = 0;
+      vertex.uv0[1] = 0;
+    }
+    else
+    {
+      vertex.uv0[0] = uv0List[i].x * std::numeric_limits<int16_t>::max();
+      vertex.uv0[1] = uv0List[i].y * std::numeric_limits<int16_t>::max();
+    }
     
     if (boneWeightList.size() > 0)
     {
       for (int j = 0; j < 4; ++j)
       {
         vertex.boneIndex[j] = boneWeightList[i].boneIndex[j];
+        vertex.boneWeight[j] = boneWeightList[i].boneWeight.v[j] * std::numeric_limits<uint8_t>::max();
       }
-      vertex.boneWeight = boneWeightList[i].boneWeight;
+      //vertex.boneWeight = boneWeightList[i].boneWeight;
     }
     else
     {
       for (int j = 0; j < 4; ++j)
       {
         vertex.boneIndex[j] = 0;
+        vertex.boneWeight[j] = 0;
       }
-      vertex.boneWeight = GLKVector4Make(1, 0, 0, 0);
+      vertex.boneWeight[0] = std::numeric_limits<uint8_t>::max();
+      //= GLKVector4Make(1, 0, 0, 0);
     }
     
     //printf("weight[%d]: %f, %f, %f, %f\n", i, vertex.boneWeight.x, vertex.boneWeight.y, vertex.boneWeight.z, vertex.boneWeight.w);

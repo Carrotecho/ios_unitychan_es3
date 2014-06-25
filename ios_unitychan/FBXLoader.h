@@ -21,10 +21,11 @@ struct ModelBoneWeight
 struct ModelVertex
 {
   GLKVector3 position;
-  GLKVector3 normal;
-  GLKVector2 uv0;
+  int16_t normal[3];
+  int16_t pad;
+  int16_t uv0[2];
   uint8_t boneIndex[4];
-  GLKVector4 boneWeight;
+  uint8_t boneWeight[4];
   
   bool operator == (const ModelVertex& v) const
   {

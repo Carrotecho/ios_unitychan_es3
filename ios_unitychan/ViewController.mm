@@ -300,6 +300,32 @@ struct UniformVs
 {
   [EAGLContext setCurrentContext:self.context];
   
+  glDeleteProgram(_programSkin);
+  glDeleteProgram(_programCloth);
+  glDeleteBuffers(1, &_uniformBufferVs);
+  
+  for (auto& pair : _textureDictionary)
+  {
+    glDeleteTextures(1, &pair.second);
+  }
+  for (auto& material : _materialList)
+  {
+    glDeleteSamplers(1, &material.clampSampler);
+    glDeleteSamplers(1, &material.repeatSampler);
+  }
+  for (auto& mesh : _opacityMeshList)
+  {
+    glDeleteBuffers(1, &mesh.indexBuffer);
+    glDeleteBuffers(1, &mesh.vertexBuffer);
+    glDeleteVertexArrays(1, &mesh.vertexArray);
+  }
+  for (auto& mesh : _transparencyMeshList)
+  {
+    glDeleteBuffers(1, &mesh.indexBuffer);
+    glDeleteBuffers(1, &mesh.vertexBuffer);
+    glDeleteVertexArrays(1, &mesh.vertexArray);
+  }
+  
   _fbxLoader.Finalize();
 }
 

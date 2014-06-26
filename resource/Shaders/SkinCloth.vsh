@@ -10,16 +10,14 @@
 
 #define ATTRIB_POSITION 0
 #define ATTRIB_NORMAL 1
-#define ATTRIB_MESH_INDEX 2
-#define ATTRIB_TEXCOORD0 3
-#define ATTRIB_BONE_INDEX 4
-#define ATTRIB_BONE_WEIGHT 5
+#define ATTRIB_TEXCOORD0 2
+#define ATTRIB_BONE_INDEX 3
+#define ATTRIB_BONE_WEIGHT 4
 
 #define MAX_NODE_COUNT 170
 
 layout (location = ATTRIB_POSITION) in vec4 vsPosition;
 layout (location = ATTRIB_NORMAL) in vec3 vsNormal;
-layout (location = ATTRIB_MESH_INDEX) in uint vsMeshIndex;
 layout (location = ATTRIB_TEXCOORD0) in vec2 vsTexcoord0;
 layout (location = ATTRIB_BONE_INDEX) in uvec4 vsBoneIndex;
 layout (location = ATTRIB_BONE_WEIGHT) in vec4 vsBoneWeight;
@@ -49,7 +47,7 @@ void main()
   boneMatrix += nodeMatrixList[vsBoneIndex.z] * vsBoneWeight.z;
   boneMatrix += nodeMatrixList[vsBoneIndex.w] * vsBoneWeight.w;
   
-  mat4 nodeMatrix = nodeMatrixList[vsMeshIndex] * boneMatrix;
+  mat4 nodeMatrix = nodeMatrixList[0] * boneMatrix;
   
   normal = normalize(mat3(normalMatrix) * mat3(nodeMatrix) * vsNormal);
   texcoord0 = vsTexcoord0;

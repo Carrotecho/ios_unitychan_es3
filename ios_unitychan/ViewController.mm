@@ -32,7 +32,6 @@ enum
 {
   ATTRIB_VERTEX,
   ATTRIB_NORMAL,
-  ATTRIB_MESH_INDEX,
   ATTRIB_TEXCOORD0,
   ATTRIB_BONE_INDEX,
   ATTRIB_BONE_WEIGHT,
@@ -267,8 +266,6 @@ struct UniformVs
     glVertexAttribPointer(ATTRIB_VERTEX, 3, GL_FLOAT, GL_FALSE, sizeof(ModelVertex), BUFFER_OFFSET(offsetof(ModelVertex, position)));
     glEnableVertexAttribArray(ATTRIB_NORMAL);
     glVertexAttribPointer(ATTRIB_NORMAL, 3, GL_SHORT, GL_TRUE, sizeof(ModelVertex), BUFFER_OFFSET(offsetof(ModelVertex, normal)));
-    glEnableVertexAttribArray(ATTRIB_MESH_INDEX);
-    glVertexAttribIPointer(ATTRIB_MESH_INDEX, 1, GL_UNSIGNED_BYTE, sizeof(ModelVertex), BUFFER_OFFSET(offsetof(ModelVertex, meshIndex)));
     glEnableVertexAttribArray(ATTRIB_TEXCOORD0);
     glVertexAttribPointer(ATTRIB_TEXCOORD0, 2, GL_SHORT, GL_TRUE, sizeof(ModelVertex), BUFFER_OFFSET(offsetof(ModelVertex, uv0)));
     glEnableVertexAttribArray(ATTRIB_BONE_INDEX);

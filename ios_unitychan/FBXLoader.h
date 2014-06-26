@@ -53,8 +53,7 @@ struct ModelVertex
 {
   GLKVector3 position;
   int16_t normal[3];
-  uint8_t meshIndex;
-  uint8_t pad;
+  int16_t pad;
   int16_t uv0[2];
   uint8_t boneIndex[4];
   uint8_t boneWeight[4];

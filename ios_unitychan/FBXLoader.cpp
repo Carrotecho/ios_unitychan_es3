@@ -551,8 +551,6 @@ ModelMesh FBXLoader::ParseMesh(FbxMesh* mesh)
       vertex.normal[j] = normalList[i].v[j] * std::numeric_limits<int16_t>::max();
     }
     
-    vertex.meshIndex = meshIndex;
-    
     if (uv0List.size() == 0)
     {
       vertex.uv0[0] = 0;

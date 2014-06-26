@@ -18,11 +18,43 @@ struct ModelBoneWeight
   GLKVector4 boneWeight;
 };
 
+struct ModelKey
+{
+  float frame;
+  float value;
+};
+
+struct ModelFCurve
+{
+  std::string nodeName;
+  
+  std::vector<ModelKey> transXList;
+  std::vector<ModelKey> transYList;
+  std::vector<ModelKey> transZList;
+  
+  std::vector<ModelKey> rotateXList;
+  std::vector<ModelKey> rotateYList;
+  std::vector<ModelKey> rotateZList;
+  
+  std::vector<ModelKey> scaleXList;
+  std::vector<ModelKey> scaleYList;
+  std::vector<ModelKey> scaleZList;
+};
+
+struct ModelAnim
+{
+  float startFrame;
+  float endFrame;
+  
+  std::vector<ModelFCurve> fCurveList;
+};
+
 struct ModelVertex
 {
   GLKVector3 position;
   int16_t normal[3];
-  int16_t pad;
+  uint8_t meshIndex;
+  uint8_t pad;
   int16_t uv0[2];
   uint8_t boneIndex[4];
   uint8_t boneWeight[4];
@@ -33,6 +65,20 @@ struct ModelVertex
   }
 };
 
+struct ModelNode
+{
+  std::string nodeName;
+  std::string parentName;
+  
+  int nodeId;
+  int parentId;
+  
+  GLKMatrix4 localMatrix;
+  GLKMatrix4 invBaseposeMatrix;
+  
+  int animNodeId;
+};
+
 struct ModelMesh
 {
   std::string nodeName;
@@ -40,10 +86,6 @@ struct ModelMesh
   
   std::vector<ModelVertex> vertexList;
   std::vector<uint16_t> indexList;
-  
-  GLKMatrix4 invMeshBaseposeMatrix;
-  std::vector<std::string> boneNodeNameList;
-  std::vector<GLKMatrix4> invBoneBaseposeMatrixList;
 };
 
 struct ModelMaterial
@@ -91,18 +133,8 @@ public:
     return this->materialList[materialId];
   }
   
-  float GetAnimationStartFrame() const
-  {
-    return this->animationStartFrame;
-  }
-  
-  float GetAnimationEndFrame() const
-  {
-    return this->animationEndFrame;
-  }
-  
-  void GetMeshMatrix(float frame, int meshId, GLKMatrix4* out_matrix) const;
-  void GetBoneMatrix(float frame, int meshId, GLKMatrix4* out_matrixList, int matrixCount) const;
+  void Update(float dt);
+  void GetNodeMatrixList(GLKMatrix4* out_matrixList, int matrixCount) const;
   
 private:
   
@@ -114,15 +146,15 @@ private:
   FbxManager* sdkManager;
   FbxScene* fbxScene;
   
+  std::vector<ModelNode> nodeList;
   std::vector<ModelMesh> meshList;
   std::vector<ModelMaterial> materialList;
   std::map<std::string, int> materialIdDictionary;
   std::map<std::string, int> nodeIdDictionary;
   
   FbxScene* fbxSceneAnimation;
-  std::map<std::string, int> nodeIdDictionaryAnimation;
-  float animationStartFrame;
-  float animationEndFrame;
+  std::vector<GLKMatrix4> nodeMatrixList;
+  ModelAnim anim;
 };
 
 #endif /* defined(__ios_unitychan__FBXImporter__) */

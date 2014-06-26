@@ -32,6 +32,7 @@ enum
 {
   ATTRIB_VERTEX,
   ATTRIB_NORMAL,
+  ATTRIB_MESH_INDEX,
   ATTRIB_TEXCOORD0,
   ATTRIB_BONE_INDEX,
   ATTRIB_BONE_WEIGHT,
@@ -64,7 +65,7 @@ struct AppMesh
   int modelMeshId;
 };
 
-#define MAX_BONE_COUNT 128
+#define MAX_NODE_COUNT 170
 struct UniformVs
 {
   GLKMatrix4 modelViewMatrix;
@@ -74,8 +75,7 @@ struct UniformVs
   GLKVector4 lightDirection;
   GLKVector4 cameraPosition;
   
-  GLKMatrix4 meshMatrix;
-  GLKMatrix4 boneMatrixList[MAX_BONE_COUNT];
+  GLKMatrix4 nodeMatrixList[MAX_NODE_COUNT];
 };
 
 @interface ViewController () {
@@ -84,7 +84,6 @@ struct UniformVs
   GLuint _uniformBufferVs;
   
   float _rotation;
-  float _frame;
   UniformVs _uniformVs;
   
   FBXLoader _fbxLoader;
@@ -268,6 +267,8 @@ struct UniformVs
     glVertexAttribPointer(ATTRIB_VERTEX, 3, GL_FLOAT, GL_FALSE, sizeof(ModelVertex), BUFFER_OFFSET(offsetof(ModelVertex, position)));
     glEnableVertexAttribArray(ATTRIB_NORMAL);
     glVertexAttribPointer(ATTRIB_NORMAL, 3, GL_SHORT, GL_TRUE, sizeof(ModelVertex), BUFFER_OFFSET(offsetof(ModelVertex, normal)));
+    glEnableVertexAttribArray(ATTRIB_MESH_INDEX);
+    glVertexAttribIPointer(ATTRIB_MESH_INDEX, 1, GL_UNSIGNED_BYTE, sizeof(ModelVertex), BUFFER_OFFSET(offsetof(ModelVertex, meshIndex)));
     glEnableVertexAttribArray(ATTRIB_TEXCOORD0);
     glVertexAttribPointer(ATTRIB_TEXCOORD0, 2, GL_SHORT, GL_TRUE, sizeof(ModelVertex), BUFFER_OFFSET(offsetof(ModelVertex, uv0)));
     glEnableVertexAttribArray(ATTRIB_BONE_INDEX);
@@ -291,8 +292,6 @@ struct UniformVs
       _opacityMeshList.push_back(mesh);
     }
   }
-  
-  _frame = 0;
   
 }
 
@@ -355,17 +354,20 @@ struct UniformVs
   
   _rotation += self.timeSinceLastUpdate * 0.5f;
   
-  _frame += self.timeSinceLastUpdate * 60.0f;
-  if (_frame >= _fbxLoader.GetAnimationEndFrame())
-  {
-    _frame -= _fbxLoader.GetAnimationEndFrame();
-  }
+  _fbxLoader.Update(self.timeSinceLastUpdate * 60.0f);
 }
 
 - (void)glkView:(GLKView *)view drawInRect:(CGRect)rect
 {
   glClearColor(0.65f, 0.65f, 0.65f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  
+  // ノード行列取得
+  _fbxLoader.GetNodeMatrixList(_uniformVs.nodeMatrixList, MAX_NODE_COUNT);
+  
+  // ユニフォームバッファにコピー
+  glBindBuffer(GL_UNIFORM_BUFFER, _uniformBufferVs);
+  glBufferData(GL_UNIFORM_BUFFER, sizeof(_uniformVs), &_uniformVs, GL_DYNAMIC_DRAW);
   
   auto drawFunc = [self](const std::vector<AppMesh>& meshList)
   {
@@ -390,16 +392,6 @@ struct UniformVs
       }
       
       glUseProgram(program);
-      
-      // メッシュ行列取得
-      _fbxLoader.GetMeshMatrix(_frame, mesh.modelMeshId, &_uniformVs.meshMatrix);
-      
-      // ボーン行列取得
-      _fbxLoader.GetBoneMatrix(_frame, mesh.modelMeshId, _uniformVs.boneMatrixList, MAX_BONE_COUNT);
-      
-      // ユニフォームバッファにコピー
-      glBindBuffer(GL_UNIFORM_BUFFER, _uniformBufferVs);
-      glBufferData(GL_UNIFORM_BUFFER, sizeof(_uniformVs), &_uniformVs, GL_DYNAMIC_DRAW);
       glBindBufferBase(GL_UNIFORM_BUFFER, uniforms[UNIFORM_VS], _uniformBufferVs);
       
       glBindVertexArray(mesh.vertexArray);

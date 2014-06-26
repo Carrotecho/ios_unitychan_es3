@@ -181,7 +181,7 @@ std::vector<GLKVector2> GetUVList(FbxMesh* mesh, const std::vector<int>& indexLi
   return uvList;
 }
 
-void GetWeight(FbxMesh* mesh, const std::vector<int>& indexList, std::vector<ModelBoneWeight>& boneWeightList, std::vector<std::string>& boneNodeNameList, std::vector<GLKMatrix4>& invBaseposeMatrixList)
+void GetWeight(FbxMesh* mesh, const std::vector<int>& indexList, std::vector<ModelBoneWeight>& boneWeightList, std::map<std::string, int>& nodeIdDictionary)
 {
   auto skinCount = mesh->GetDeformerCount(FbxDeformer::eSkin);
   if (skinCount == 0)
@@ -206,7 +206,7 @@ void GetWeight(FbxMesh* mesh, const std::vector<int>& indexList, std::vector<Mod
     // eNormalizeしか対応しない
     assert(cluster->GetLinkMode() == FbxCluster::eNormalize);
     
-    boneNodeNameList.push_back(cluster->GetLink()->GetName());
+    auto nodeId = nodeIdDictionary.at(cluster->GetLink()->GetName());
     
     auto indexCount = cluster->GetControlPointIndicesCount();
     auto indices = cluster->GetControlPointIndices();
@@ -215,20 +215,8 @@ void GetWeight(FbxMesh* mesh, const std::vector<int>& indexList, std::vector<Mod
     for (int j = 0; j < indexCount; ++j)
     {
       auto controlPointIndex = indices[j];
-      tmpBoneWeightList[controlPointIndex].push_back({i, weights[j]});
+      tmpBoneWeightList[controlPointIndex].push_back({nodeId, weights[j]});
     }
-    
-    // ペースポーズの逆行列を作成しておく
-    GLKMatrix4 invBaseposeMatrix;
-    
-    auto baseposeMatrix = cluster->GetLink()->EvaluateGlobalTransform().Inverse();
-    auto baseposeMatrixPtr = (double*)baseposeMatrix;
-    for (int j = 0; j < 16; ++j)
-    {
-      invBaseposeMatrix.m[j] = (float)baseposeMatrixPtr[j];
-    }
-    
-    invBaseposeMatrixList.push_back(invBaseposeMatrix);
   }
   
   // コントロールポイントに対応したウェイトを作成
@@ -279,6 +267,68 @@ void GetWeight(FbxMesh* mesh, const std::vector<int>& indexList, std::vector<Mod
   }
 }
 
+std::vector<ModelKey> GetKeyList(FbxAnimCurve* curve, bool isRotate)
+{
+  std::vector<ModelKey> keyList;
+  
+  if (curve == nullptr)
+  {
+    return keyList;
+  }
+  
+  auto keyCount = curve->KeyGetCount();
+  
+  for (int i = 0; i < keyCount; ++i)
+  {
+    auto fbxKey = curve->KeyGet(i);
+    
+    auto time = fbxKey.GetTime();
+    auto value = fbxKey.GetValue();
+    auto interpolation = fbxKey.GetInterpolation();
+    assert(interpolation == FbxAnimCurveDef::eInterpolationCubic);
+    
+    auto tangentMode = fbxKey.GetTangentMode();
+    assert(tangentMode == FbxAnimCurveDef::eTangentAuto);
+    
+//    auto rightSlope = key.GetDataFloat(FbxAnimCurveDef::eRightSlope);
+//    auto nextLeftSlope = key.GetDataFloat(FbxAnimCurveDef::eNextLeftSlope);
+//    auto tangentWeightMode = key.GetTangentWeightMode();
+//    auto tangentVelocityMode = key.GetTangentVelocityMode();
+    
+    ModelKey key;
+    key.frame = (double)time.Get() / FbxTime::GetOneFrameValue(FbxTime::eFrames60);
+    key.value = value;
+    
+    // 回転ならディグリーからラジアンに変換しておく
+    if (isRotate)
+    {
+      key.value = GLKMathDegreesToRadians(key.value);
+    }
+    
+    keyList.push_back(key);
+  }
+  
+  // 全フレーム同じ値なら省略する
+  auto firstValue = keyList[0].value;
+  auto isSame = true;
+  
+  for (int i = 1; i < keyCount; ++i)
+  {
+    if (firstValue != keyList[i].value)
+    {
+      isSame = false;
+      break;
+    }
+  }
+  
+  if (isSame)
+  {
+    //keyList.resize(1);
+  }
+  
+  return keyList;
+}
+
 bool FBXLoader::Initialize(const char* filepath)
 {
   this->sdkManager = FbxManager::Create();
@@ -308,6 +358,40 @@ bool FBXLoader::Initialize(const char* filepath)
   {
     auto fbxNode = this->fbxScene->GetNode(i);
     this->nodeIdDictionary.insert({fbxNode->GetName(), i});
+    
+    auto fbxNodeParent = fbxNode->GetParent();
+    
+    ModelNode node;
+    node.nodeName = fbxNode->GetName();
+    node.nodeId = i;
+    if (fbxNodeParent != nullptr)
+    {
+      node.parentName = fbxNodeParent->GetName();
+      node.parentId = this->nodeIdDictionary.at(node.parentName);
+    }
+    else
+    {
+      node.parentName.clear();
+      node.parentId = -1;
+    }
+    node.animNodeId = -1;
+    
+    auto localMatrix = fbxNode->EvaluateLocalTransform();
+    auto localMatrixPtr = (double*)localMatrix;
+    for (int j = 0; j < 16; ++j)
+    {
+      node.localMatrix.m[j] = localMatrixPtr[j];
+    }
+    
+    auto invBasePoseMatrix = fbxNode->EvaluateGlobalTransform().Inverse();
+    auto invBasePoseMatrixPtr = (double*)invBasePoseMatrix;
+    for (int j = 0; j < 16; ++j)
+    {
+      node.invBaseposeMatrix.m[j] = invBasePoseMatrixPtr[j];
+    }
+    
+    this->nodeList.push_back(node);
+    this->nodeMatrixList.push_back(GLKMatrix4Identity);
   }
   
   // シーンに含まれるマテリアルの解析
@@ -368,8 +452,8 @@ bool FBXLoader::LoadAnimation(const char* filepath)
   auto startTime = takeInfo->mLocalTimeSpan.GetStart();
   auto stopTime = takeInfo->mLocalTimeSpan.GetStop();
   
-  this->animationStartFrame = (importOffset.Get() + startTime.Get()) / FbxTime::GetOneFrameValue(FbxTime::eFrames60);
-  this->animationEndFrame = (importOffset.Get() + stopTime.Get()) / FbxTime::GetOneFrameValue(FbxTime::eFrames60);
+  this->anim.startFrame = (importOffset.Get() + startTime.Get()) / FbxTime::GetOneFrameValue(FbxTime::eFrames60);
+  this->anim.endFrame = (importOffset.Get() + stopTime.Get()) / FbxTime::GetOneFrameValue(FbxTime::eFrames60);
   importer->Destroy();
   
   auto animStack = this->fbxSceneAnimation->GetSrcObject<FbxAnimStack>();
@@ -378,61 +462,43 @@ bool FBXLoader::LoadAnimation(const char* filepath)
   
   auto animLayer = animStack->GetMember<FbxAnimLayer>();
   
+  FbxTime time;
+  time.Set(FbxTime::GetOneFrameValue(FbxTime::eFrames60) * 2);
+ 
   // ノード名からノードIDを取得できるように辞書に登録
   auto nodeCount = this->fbxSceneAnimation->GetNodeCount();
   printf("animationNodeCount: %d\n", nodeCount);
-  
-  auto viewCurve = [](FbxAnimCurve* curve)
-  {
-    if (curve == nullptr)
-    {
-      return;
-    }
-    
-    auto keyCount = curve->KeyGetCount();
-    
-    for (int j = 0; j < keyCount; ++j)
-    {
-      auto key = curve->KeyGet(j);
-      auto time = key.GetTime();
-      auto value = key.GetValue();
-      auto interpolation = key.GetInterpolation();
-      auto rightSlope = key.GetDataFloat(FbxAnimCurveDef::eRightSlope);
-      auto nextLeftSlope = key.GetDataFloat(FbxAnimCurveDef::eNextLeftSlope);
-      auto tangentMode = key.GetTangentMode();
-      auto tangentWeightMode = key.GetTangentWeightMode();
-      auto tangentVelocityMode = key.GetTangentVelocityMode();
-      
-      printf("%d: [%f, %f, %f, %f]\n", j, (float)time.Get() / FbxTime::GetOneFrameValue(), value, rightSlope, nextLeftSlope);
-    }
-  };
-  
   for (int i = 0; i < nodeCount; ++i)
   {
     auto fbxNode = this->fbxSceneAnimation->GetNode(i);
-    this->nodeIdDictionaryAnimation.insert({fbxNode->GetName(), i});
     
-    printf("node: %s\n", fbxNode->GetName());
-    printf("trans x\n");
-    viewCurve(fbxNode->LclTranslation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_X));
-    printf("trans y\n");
-    viewCurve(fbxNode->LclTranslation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Y));
-    printf("trans z\n");
-    viewCurve(fbxNode->LclTranslation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Z));
+    ModelFCurve fCurve;
+    fCurve.nodeName = fbxNode->GetName();
     
-    printf("rot x\n");
-    viewCurve(fbxNode->LclRotation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_X));
-    printf("rot y\n");
-    viewCurve(fbxNode->LclRotation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Y));
-    printf("rot z\n");
-    viewCurve(fbxNode->LclRotation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Z));
+    fCurve.transXList = GetKeyList(fbxNode->LclTranslation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_X), false);
+    fCurve.transYList = GetKeyList(fbxNode->LclTranslation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Y), false);
+    fCurve.transZList = GetKeyList(fbxNode->LclTranslation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Z), false);
     
-    printf("scale x\n");
-    viewCurve(fbxNode->LclScaling.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_X));
-    printf("scale y\n");
-    viewCurve(fbxNode->LclScaling.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Y));
-    printf("scale z\n");
-    viewCurve(fbxNode->LclScaling.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Z));
+    fCurve.rotateXList = GetKeyList(fbxNode->LclRotation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_X), true);
+    fCurve.rotateYList = GetKeyList(fbxNode->LclRotation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Y), true);
+    fCurve.rotateZList = GetKeyList(fbxNode->LclRotation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Z), true);
+    
+    fCurve.scaleXList = GetKeyList(fbxNode->LclScaling.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_X), false);
+    fCurve.scaleYList = GetKeyList(fbxNode->LclScaling.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Y), false);
+    fCurve.scaleZList = GetKeyList(fbxNode->LclScaling.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Z), false);
+    
+    this->anim.fCurveList.push_back(fCurve);
+    
+    auto nodeId = this->nodeIdDictionary[fbxNode->GetName()];
+    auto& node = this->nodeList[nodeId];
+    node.animNodeId = i;
+    
+    auto localMatrix = fbxNode->EvaluateLocalTransform(time);
+    auto localMatrixPtr = (double*)localMatrix;
+    for (int j = 0; j < 16; ++j)
+    {
+      node.localMatrix.m[j] = localMatrixPtr[j];
+    }
   }
   
   return true;
@@ -453,15 +519,6 @@ ModelMesh FBXLoader::ParseMesh(FbxMesh* mesh)
   
   printf(">> mesh: %s, %s\n", modelMesh.nodeName.c_str(), modelMesh.materialName.c_str());
   
-  // ペースポーズの逆行列を作成しておく
-  auto baseposeMatrix = node->EvaluateGlobalTransform().Inverse();
-  
-  auto baseposeMatrixPtr = (double*)baseposeMatrix;
-  for (int i = 0; i < 16; ++i)
-  {
-    modelMesh.invMeshBaseposeMatrix.m[i] = (float)baseposeMatrixPtr[i];
-  }
-  
   // インデックス取得
   auto indexList = GetIndexList(mesh);
   
@@ -471,7 +528,7 @@ ModelMesh FBXLoader::ParseMesh(FbxMesh* mesh)
   auto uv0List = GetUVList(mesh, indexList, 0);
   
   std::vector<ModelBoneWeight> boneWeightList;
-  GetWeight(mesh, indexList, boneWeightList, modelMesh.boneNodeNameList, modelMesh.invBoneBaseposeMatrixList);
+  GetWeight(mesh, indexList, boneWeightList, this->nodeIdDictionary);
   
   // 念のためサイズチェック
   assert(indexList.size() == positionList.size());
@@ -483,6 +540,8 @@ ModelMesh FBXLoader::ParseMesh(FbxMesh* mesh)
   std::vector<ModelVertex> modelVertexList;
   modelVertexList.reserve(indexList.size());
   
+  auto meshIndex = this->nodeIdDictionary.at(modelMesh.nodeName);
+  
   for (int i = 0; i < indexList.size(); ++i)
   {
     ModelVertex vertex;
@@ -491,6 +550,8 @@ ModelMesh FBXLoader::ParseMesh(FbxMesh* mesh)
     {
       vertex.normal[j] = normalList[i].v[j] * std::numeric_limits<int16_t>::max();
     }
+    
+    vertex.meshIndex = meshIndex;
     
     if (uv0List.size() == 0)
     {
@@ -510,7 +571,6 @@ ModelMesh FBXLoader::ParseMesh(FbxMesh* mesh)
         vertex.boneIndex[j] = boneWeightList[i].boneIndex[j];
         vertex.boneWeight[j] = boneWeightList[i].boneWeight.v[j] * std::numeric_limits<uint8_t>::max();
       }
-      //vertex.boneWeight = boneWeightList[i].boneWeight;
     }
     else
     {
@@ -520,7 +580,6 @@ ModelMesh FBXLoader::ParseMesh(FbxMesh* mesh)
         vertex.boneWeight[j] = 0;
       }
       vertex.boneWeight[0] = std::numeric_limits<uint8_t>::max();
-      //= GLKVector4Make(1, 0, 0, 0);
     }
     
     //printf("weight[%d]: %f, %f, %f, %f\n", i, vertex.boneWeight.x, vertex.boneWeight.y, vertex.boneWeight.z, vertex.boneWeight.w);
@@ -628,64 +687,59 @@ ModelMaterial FBXLoader::ParseMaterial(FbxSurfaceMaterial* material)
   return modelMaterial;
 }
 
-void FBXLoader::GetMeshMatrix(float frame, int meshId, GLKMatrix4* out_matrix) const
+void FBXLoader::Update(float dt)
 {
-  auto& modelMesh = this->meshList[meshId];
-  
-  auto it = this->nodeIdDictionaryAnimation.find(modelMesh.nodeName);
-  if (it == this->nodeIdDictionaryAnimation.end())
+  for (auto& modelNode : this->nodeList)
   {
-    *out_matrix = GLKMatrix4Identity;
-    return;
-  }
-  
-  auto meshNodeId = it->second;
-  auto meshNode = this->fbxSceneAnimation->GetNode(meshNodeId);
-  
-  FbxTime time;
-  time.Set(FbxTime::GetOneFrameValue(FbxTime::eFrames60) * frame);
-  
-  auto& meshMatrix = meshNode->EvaluateGlobalTransform(time);
-  
-  auto meshMatrixPtr = (double*)meshMatrix;
-  for (int i = 0; i < 16; ++i)
-  {
-    out_matrix->m[i] = (float)meshMatrixPtr[i];
-  }
-  
-  *out_matrix = GLKMatrix4Multiply(*out_matrix, modelMesh.invMeshBaseposeMatrix);
-}
-
-void FBXLoader::GetBoneMatrix(float frame, int meshId, GLKMatrix4* out_matrixList, int matrixCount) const
-{
-  auto& modelMesh = this->meshList[meshId];
-  
-  if (modelMesh.boneNodeNameList.size() == 0)
-  {
-    out_matrixList[0] = GLKMatrix4Identity;
-    return;
-  }
-  
-  assert(modelMesh.boneNodeNameList.size() <= matrixCount);
-  
-  FbxTime time;
-  time.Set(FbxTime::GetOneFrameValue(FbxTime::eFrames60) * frame);
-  
-  for (int i = 0; i < modelMesh.boneNodeNameList.size(); ++i)
-  {
-    auto& boneNodeName = modelMesh.boneNodeNameList[i];
-    auto boneNodeId = this->nodeIdDictionaryAnimation.at(boneNodeName);
-    auto boneNode = this->fbxSceneAnimation->GetNode(boneNodeId);
+    auto& nodeMatrix = this->nodeMatrixList[modelNode.nodeId];
     
-    auto& boneMatrix = boneNode->EvaluateGlobalTransform(time);
-    auto& out_matrix = out_matrixList[i];
-    
-    auto boneMatrixPtr = (double*)boneMatrix;
-    for (int j = 0; j < 16; ++j)
+    if (modelNode.animNodeId >= 0)
     {
-      out_matrix.m[j] = (float)boneMatrixPtr[j];
+      auto& fCurve = this->anim.fCurveList[modelNode.animNodeId];
     }
     
-    out_matrix = GLKMatrix4Multiply(out_matrix, modelMesh.invBoneBaseposeMatrixList[i]);
+//    GLKVector3 trans;
+//    if (fCurve.transXList.size() > 1)
+//    {
+//      trans.x = fCurve.transXList[1].value;
+//    }
+//    if (fCurve.transYList.size() > 1)
+//    {
+//      trans.y = fCurve.transYList[1].value;
+//    }
+//    if (fCurve.transZList.size() > 1)
+//    {
+//      trans.z = fCurve.transZList[1].value;
+//    }
+    
+    nodeMatrix = this->nodeList[modelNode.nodeId].localMatrix;
+    
+    if (modelNode.parentId >= 0)
+    {
+      auto& parentMatrix = this->nodeMatrixList[modelNode.parentId];
+      //nodeMatrix = GLKMatrix4Multiply(nodeMatrix, parentMatrix);
+      nodeMatrix = GLKMatrix4Multiply(parentMatrix, nodeMatrix);
+    }
   }
+  
+  for (auto& modelNode : this->nodeList)
+  {
+    auto& nodeMatrix = this->nodeMatrixList[modelNode.nodeId];
+    auto& invBaseposeMatrix = this->nodeList[modelNode.nodeId].invBaseposeMatrix;
+    nodeMatrix = GLKMatrix4Multiply(nodeMatrix, invBaseposeMatrix);
+  }
+  
+//  for (int i = 0; i < this->nodeMatrixList.size(); ++i)
+//  {
+//    this->nodeMatrixList[i] = GLKMatrix4Identity;
+//  }
 }
+
+void FBXLoader::GetNodeMatrixList(GLKMatrix4* out_matrixList, int matrixCount) const
+{
+  assert(this->nodeMatrixList.size() < matrixCount);
+  
+  memcpy(out_matrixList, this->nodeMatrixList.data(), this->nodeMatrixList.size() * sizeof(GLKMatrix4));
+  
+}
+

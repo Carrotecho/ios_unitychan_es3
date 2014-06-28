@@ -308,24 +308,6 @@ std::vector<ModelKey> GetKeyList(FbxAnimCurve* curve, bool isRotate)
     keyList.push_back(key);
   }
   
-  // 全フレーム同じ値なら省略する
-  auto firstValue = keyList[0].value;
-  auto isSame = true;
-  
-  for (int i = 1; i < keyCount; ++i)
-  {
-    if (firstValue != keyList[i].value)
-    {
-      isSame = false;
-      break;
-    }
-  }
-  
-  if (isSame)
-  {
-    //keyList.resize(1);
-  }
-  
   return keyList;
 }
 
@@ -465,7 +447,7 @@ bool FBXLoader::LoadAnimation(const char* filepath)
   
   auto animStack = this->fbxSceneAnimation->GetSrcObject<FbxAnimStack>();
   auto animLayerCount = animStack->GetMemberCount<FbxAnimLayer>();
-  assert(animStackCount == 1);
+  assert(animLayerCount == 1);
   
   auto animLayer = animStack->GetMember<FbxAnimLayer>();
   
@@ -475,14 +457,13 @@ bool FBXLoader::LoadAnimation(const char* filepath)
   // ノード名からノードIDを取得できるように辞書に登録
   auto nodeCount = this->fbxSceneAnimation->GetNodeCount();
   printf("animationNodeCount: %d\n", nodeCount);
+  this->fbxSceneAnimation->GetRootNode()->ResetPivotSetAndConvertAnimation(30, true);
   for (int i = 0; i < nodeCount; ++i)
   {
     auto fbxNode = this->fbxSceneAnimation->GetNode(i);
     
     ModelFCurve fCurve;
     fCurve.nodeName = fbxNode->GetName();
-    
-    fbxNode->ResetPivotSetAndConvertAnimation(60, true);
     
     fCurve.transXList = GetKeyList(fbxNode->LclTranslation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_X), false);
     fCurve.transYList = GetKeyList(fbxNode->LclTranslation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Y), false);
@@ -555,8 +536,6 @@ ModelMesh FBXLoader::ParseMesh(FbxMesh* mesh)
   // 頂点をインターリーブドアレイに
   std::vector<ModelVertex> modelVertexList;
   modelVertexList.reserve(indexList.size());
-  
-  auto meshIndex = this->nodeIdDictionary.at(modelMesh.nodeName);
   
   for (int i = 0; i < indexList.size(); ++i)
   {
@@ -703,14 +682,6 @@ ModelMaterial FBXLoader::ParseMaterial(FbxSurfaceMaterial* material)
 
 float CatmullRom(float p0, float p1, float p2, float p3, float t)
 {
-//  float t2 = t * t;
-//  float t3 = t2 * t;
-//  
-//  return (-0.5f * p0 + 1.5f * p1 + -1.5f * p2 + 0.5f * p3) * t3 +
-//  (p0 + -2.5f * p1 + 2.5f * p2 + 0.5f * p3) * t2 +
-//  (-0.5f * p0 + 0.5f * p2) * t +
-//  p1;
-  
   float v0 = (p2 - p0) / 2;
   float v1 = (p3 - p1) / 2;
   float t2 = t * t;
@@ -756,11 +727,10 @@ void GetFrameValue(float* inout_value, float frame, const std::vector<ModelKey>&
 
 void FBXLoader::Update(float dt)
 {
-  static auto frame = 0.0f;
-  frame += dt;
-  if (frame > this->anim.endFrame)
+  this->animFrame += dt;
+  if (this->animFrame > this->anim.endFrame)
   {
-    frame = 0;
+    this->animFrame = 0;
   }
   
   for (auto& modelNode : this->nodeList)
@@ -774,17 +744,17 @@ void FBXLoader::Update(float dt)
     if (modelNode.animNodeId >= 0)
     {
       auto& fCurve = this->anim.fCurveList[modelNode.animNodeId];
-      GetFrameValue(&trans.x, frame, fCurve.transXList);
-      GetFrameValue(&trans.y, frame, fCurve.transYList);
-      GetFrameValue(&trans.z, frame, fCurve.transZList);
+      GetFrameValue(&trans.x, this->animFrame, fCurve.transXList);
+      GetFrameValue(&trans.y, this->animFrame, fCurve.transYList);
+      GetFrameValue(&trans.z, this->animFrame, fCurve.transZList);
       
-      GetFrameValue(&rotate.x, frame, fCurve.rotateXList);
-      GetFrameValue(&rotate.y, frame, fCurve.rotateYList);
-      GetFrameValue(&rotate.z, frame, fCurve.rotateZList);
+      GetFrameValue(&rotate.x, this->animFrame, fCurve.rotateXList);
+      GetFrameValue(&rotate.y, this->animFrame, fCurve.rotateYList);
+      GetFrameValue(&rotate.z, this->animFrame, fCurve.rotateZList);
       
-      GetFrameValue(&scale.x, frame, fCurve.scaleXList);
-      GetFrameValue(&scale.y, frame, fCurve.scaleYList);
-      GetFrameValue(&scale.z, frame, fCurve.scaleZList);
+      GetFrameValue(&scale.x, this->animFrame, fCurve.scaleXList);
+      GetFrameValue(&scale.y, this->animFrame, fCurve.scaleYList);
+      GetFrameValue(&scale.z, this->animFrame, fCurve.scaleZList);
     }
     
     nodeMatrix = GLKMatrix4MakeTranslation(trans.x, trans.y, trans.z);
@@ -806,11 +776,6 @@ void FBXLoader::Update(float dt)
     auto& invBaseposeMatrix = this->nodeList[modelNode.nodeId].invBaseposeMatrix;
     nodeMatrix = GLKMatrix4Multiply(nodeMatrix, invBaseposeMatrix);
   }
-  
-//  for (int i = 0; i < this->nodeMatrixList.size(); ++i)
-//  {
-//    this->nodeMatrixList[i] = GLKMatrix4Identity;
-//  }
 }
 
 void FBXLoader::GetNodeMatrixList(GLKMatrix4* out_matrixList, int matrixCount) const
@@ -818,6 +783,5 @@ void FBXLoader::GetNodeMatrixList(GLKMatrix4* out_matrixList, int matrixCount) c
   assert(this->nodeMatrixList.size() < matrixCount);
   
   memcpy(out_matrixList, this->nodeMatrixList.data(), this->nodeMatrixList.size() * sizeof(GLKMatrix4));
-  
 }
 

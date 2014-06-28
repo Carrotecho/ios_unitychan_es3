@@ -163,6 +163,7 @@ private:
   FbxScene* fbxSceneAnimation;
   std::vector<GLKMatrix4> nodeMatrixList;
   ModelAnim anim;
+  float animFrame;
 };
 
 #endif /* defined(__ios_unitychan__FBXImporter__) */

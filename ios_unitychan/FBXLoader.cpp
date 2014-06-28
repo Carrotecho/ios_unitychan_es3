@@ -297,6 +297,12 @@ std::vector<ModelKey> GetKeyList(FbxAnimCurve* curve, bool isRotate)
     
     ModelKey key;
     key.frame = (double)time.Get() / FbxTime::GetOneFrameValue(FbxTime::eFrames60);
+    
+    // 0フレーム未満はTポーズが入っている
+    if (key.frame < 0)
+    {
+      continue;
+    }
     key.value = value;
     
     // 回転ならディグリーからラジアンに変換しておく
@@ -405,6 +411,7 @@ bool FBXLoader::Initialize(const char* filepath)
     this->meshList.push_back(this->ParseMesh(fbxMesh));
   }
   
+  this->animFrame = 0;
   
   return true;
 }

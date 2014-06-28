@@ -18,6 +18,7 @@
 enum
 {
   UNIFORM_VS,
+  UNIFORM_MESH_INDEX,
   UNIFORM_DIFFUSE_TEXTURE,
   UNIFORM_FALLOFF_TEXTURE,
   UNIFORM_RIMLIGHT_TEXTURE,
@@ -61,7 +62,7 @@ struct AppMesh
   const AppMaterial* material;
   const ModelMesh* modelMesh;
   
-  int modelMeshId;
+  int modelNodeId;
 };
 
 #define MAX_NODE_COUNT 170
@@ -192,6 +193,7 @@ struct UniformVs
   
   _programSkin = [self loadShaders:@"SkinCloth" fragment:@"Skin"];
   uniformsSkin[UNIFORM_VS] = glGetUniformBlockIndex(_programSkin, "UniformVs");
+  uniformsSkin[UNIFORM_MESH_INDEX] = glGetUniformLocation(_programSkin, "meshIndex");
   uniformsSkin[UNIFORM_DIFFUSE_TEXTURE] = glGetUniformLocation(_programSkin, "diffuseTexture");
   uniformsSkin[UNIFORM_FALLOFF_TEXTURE] = glGetUniformLocation(_programSkin, "falloffTexture");
   uniformsSkin[UNIFORM_RIMLIGHT_TEXTURE] = glGetUniformLocation(_programSkin, "rimlightTexture");
@@ -199,6 +201,7 @@ struct UniformVs
   
   _programCloth = [self loadShaders:@"SkinCloth" fragment:@"Cloth"];
   uniformsCloth[UNIFORM_VS] = glGetUniformBlockIndex(_programCloth, "UniformVs");
+  uniformsCloth[UNIFORM_MESH_INDEX] = glGetUniformLocation(_programCloth, "meshIndex");
   uniformsCloth[UNIFORM_DIFFUSE_TEXTURE] = glGetUniformLocation(_programCloth, "diffuseTexture");
   uniformsCloth[UNIFORM_FALLOFF_TEXTURE] = glGetUniformLocation(_programCloth, "falloffTexture");
   uniformsCloth[UNIFORM_RIMLIGHT_TEXTURE] = glGetUniformLocation(_programCloth, "rimlightTexture");
@@ -251,7 +254,7 @@ struct UniformVs
     auto& modelIndexList = modelMesh.indexList;
     
     AppMesh mesh;
-    mesh.modelMeshId = i;
+    mesh.modelNodeId = _fbxLoader.GetNodeId(modelMesh.nodeName);
     mesh.modelMesh = &modelMesh;
     mesh.material = &_materialList[_fbxLoader.GetMaterialId(modelMesh.materialName)];
   
@@ -390,6 +393,7 @@ struct UniformVs
       
       glUseProgram(program);
       glBindBufferBase(GL_UNIFORM_BUFFER, uniforms[UNIFORM_VS], _uniformBufferVs);
+      glUniform1ui(uniforms[UNIFORM_MESH_INDEX], mesh.modelNodeId);
       
       glBindVertexArray(mesh.vertexArray);
       

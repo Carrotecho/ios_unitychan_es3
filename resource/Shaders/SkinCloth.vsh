@@ -39,6 +39,8 @@ layout (std140) uniform UniformVs
   mat4 nodeMatrixList[MAX_NODE_COUNT];
 };
 
+uniform uint meshIndex;
+
 void main()
 {
   mat4 boneMatrix;
@@ -47,7 +49,7 @@ void main()
   boneMatrix += nodeMatrixList[vsBoneIndex.z] * vsBoneWeight.z;
   boneMatrix += nodeMatrixList[vsBoneIndex.w] * vsBoneWeight.w;
   
-  mat4 nodeMatrix = nodeMatrixList[0] * boneMatrix;
+  mat4 nodeMatrix = nodeMatrixList[meshIndex] *boneMatrix;
   
   normal = normalize(mat3(normalMatrix) * mat3(nodeMatrix) * vsNormal);
   texcoord0 = vsTexcoord0;

@@ -376,6 +376,13 @@ bool FBXLoader::Initialize(const char* filepath)
     }
     node.animNodeId = -1;
     
+    auto tmp = fbxNode->LclTranslation.Get();
+    node.baseTrans = GLKVector3Make(tmp[0], tmp[1], tmp[2]);
+    tmp = fbxNode->LclRotation.Get();
+    node.baseRotate = GLKVector3Make(tmp[0], tmp[1], tmp[2]);
+    tmp = fbxNode->LclScaling.Get();
+    node.baseScale = GLKVector3Make(tmp[0], tmp[1], tmp[2]);
+    
     auto localMatrix = fbxNode->EvaluateLocalTransform();
     auto localMatrixPtr = (double*)localMatrix;
     for (int j = 0; j < 16; ++j)
@@ -475,6 +482,8 @@ bool FBXLoader::LoadAnimation(const char* filepath)
     ModelFCurve fCurve;
     fCurve.nodeName = fbxNode->GetName();
     
+    fbxNode->ResetPivotSetAndConvertAnimation(60, true);
+    
     fCurve.transXList = GetKeyList(fbxNode->LclTranslation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_X), false);
     fCurve.transYList = GetKeyList(fbxNode->LclTranslation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Y), false);
     fCurve.transZList = GetKeyList(fbxNode->LclTranslation.GetCurve(animLayer, FBXSDK_CURVENODE_COMPONENT_Z), false);
@@ -499,6 +508,13 @@ bool FBXLoader::LoadAnimation(const char* filepath)
     {
       node.localMatrix.m[j] = localMatrixPtr[j];
     }
+    
+    auto tmp = fbxNode->LclTranslation.Get();
+    node.baseTrans = GLKVector3Make(tmp[0], tmp[1], tmp[2]);
+    tmp = fbxNode->LclRotation.Get();
+    node.baseRotate = GLKVector3Make(GLKMathDegreesToRadians(tmp[0]), GLKMathDegreesToRadians(tmp[1]), GLKMathDegreesToRadians(tmp[2]));
+    tmp = fbxNode->LclScaling.Get();
+    node.baseScale = GLKVector3Make(tmp[0], tmp[1], tmp[2]);
   }
   
   return true;
@@ -685,37 +701,101 @@ ModelMaterial FBXLoader::ParseMaterial(FbxSurfaceMaterial* material)
   return modelMaterial;
 }
 
+float CatmullRom(float p0, float p1, float p2, float p3, float t)
+{
+//  float t2 = t * t;
+//  float t3 = t2 * t;
+//  
+//  return (-0.5f * p0 + 1.5f * p1 + -1.5f * p2 + 0.5f * p3) * t3 +
+//  (p0 + -2.5f * p1 + 2.5f * p2 + 0.5f * p3) * t2 +
+//  (-0.5f * p0 + 0.5f * p2) * t +
+//  p1;
+  
+  float v0 = (p2 - p0) / 2;
+  float v1 = (p3 - p1) / 2;
+  float t2 = t * t;
+  float t3 = t2 * t;
+  
+  return (2 * p1 - 2 * p2 + v0 + v1) * t3 +
+  (-3 * p1 + 3 * p2 - 2 * v0 - v1) * t2 +
+  v0 * t +
+  p1;
+}
+
+void GetFrameValue(float* inout_value, float frame, const std::vector<ModelKey>& modelKeyList)
+{
+  if (modelKeyList.size() == 0)
+  {
+    return;
+  }
+  
+  auto it = std::lower_bound(modelKeyList.begin(), modelKeyList.end(), frame, [](const ModelKey& key, float f){return key.frame < f;});
+  
+  if (it == modelKeyList.begin())
+  {
+    *inout_value = it->value;
+    return;
+  }
+  if (it == modelKeyList.end())
+  {
+    *inout_value = (--it)->value;
+    return;
+  }
+  
+  auto prev = it - 1;
+  auto next = it + 1;
+  auto t = (frame - prev->frame) / (it->frame - prev->frame);
+  
+  float p0 = (prev != modelKeyList.begin()) ? (prev - 1)->value : prev->value;
+  float p1 = prev->value;
+  float p2 = it->value;
+  float p3 = (next != modelKeyList.end()) ? next->value : it->value;
+  
+  *inout_value = CatmullRom(p0, p1, p2, p3, t);
+}
+
 void FBXLoader::Update(float dt)
 {
+  static auto frame = 0.0f;
+  frame += dt;
+  if (frame > this->anim.endFrame)
+  {
+    frame = 0;
+  }
+  
   for (auto& modelNode : this->nodeList)
   {
     auto& nodeMatrix = this->nodeMatrixList[modelNode.nodeId];
     
+    GLKVector3 trans = modelNode.baseTrans;
+    GLKVector3 rotate = modelNode.baseRotate;
+    GLKVector3 scale = modelNode.baseScale;
+    
     if (modelNode.animNodeId >= 0)
     {
       auto& fCurve = this->anim.fCurveList[modelNode.animNodeId];
+      GetFrameValue(&trans.x, frame, fCurve.transXList);
+      GetFrameValue(&trans.y, frame, fCurve.transYList);
+      GetFrameValue(&trans.z, frame, fCurve.transZList);
+      
+      GetFrameValue(&rotate.x, frame, fCurve.rotateXList);
+      GetFrameValue(&rotate.y, frame, fCurve.rotateYList);
+      GetFrameValue(&rotate.z, frame, fCurve.rotateZList);
+      
+      GetFrameValue(&scale.x, frame, fCurve.scaleXList);
+      GetFrameValue(&scale.y, frame, fCurve.scaleYList);
+      GetFrameValue(&scale.z, frame, fCurve.scaleZList);
     }
     
-//    GLKVector3 trans;
-//    if (fCurve.transXList.size() > 1)
-//    {
-//      trans.x = fCurve.transXList[1].value;
-//    }
-//    if (fCurve.transYList.size() > 1)
-//    {
-//      trans.y = fCurve.transYList[1].value;
-//    }
-//    if (fCurve.transZList.size() > 1)
-//    {
-//      trans.z = fCurve.transZList[1].value;
-//    }
-    
-    nodeMatrix = this->nodeList[modelNode.nodeId].localMatrix;
+    nodeMatrix = GLKMatrix4MakeTranslation(trans.x, trans.y, trans.z);
+    nodeMatrix = GLKMatrix4RotateZ(nodeMatrix, rotate.z);
+    nodeMatrix = GLKMatrix4RotateY(nodeMatrix, rotate.y);
+    nodeMatrix = GLKMatrix4RotateX(nodeMatrix, rotate.x);
+    nodeMatrix = GLKMatrix4Scale(nodeMatrix, scale.x, scale.y, scale.z);
     
     if (modelNode.parentId >= 0)
     {
       auto& parentMatrix = this->nodeMatrixList[modelNode.parentId];
-      //nodeMatrix = GLKMatrix4Multiply(nodeMatrix, parentMatrix);
       nodeMatrix = GLKMatrix4Multiply(parentMatrix, nodeMatrix);
     }
   }

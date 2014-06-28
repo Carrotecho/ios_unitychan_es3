@@ -72,8 +72,12 @@ struct ModelNode
   int nodeId;
   int parentId;
   
-  GLKMatrix4 localMatrix;
+  GLKVector3 baseTrans;
+  GLKVector3 baseRotate;
+  GLKVector3 baseScale;
   GLKMatrix4 invBaseposeMatrix;
+  
+  GLKMatrix4 localMatrix;
   
   int animNodeId;
 };
@@ -117,12 +121,17 @@ public:
     return this->meshList[index];
   }
   
+  int GetNodeId(const std::string& nodeName) const
+  {
+    return this->nodeIdDictionary.at(nodeName);
+  }
+  
   int GetMaterialCount() const
   {
     return (int)this->materialList.size();
   }
   
-  const int GetMaterialId(const std::string& materialName) const
+  int GetMaterialId(const std::string& materialName) const
   {
     return this->materialIdDictionary.at(materialName);
   }

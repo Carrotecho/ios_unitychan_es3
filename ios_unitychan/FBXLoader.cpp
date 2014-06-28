@@ -371,13 +371,6 @@ bool FBXLoader::Initialize(const char* filepath)
     tmp = fbxNode->LclScaling.Get();
     node.baseScale = GLKVector3Make(tmp[0], tmp[1], tmp[2]);
     
-    auto localMatrix = fbxNode->EvaluateLocalTransform();
-    auto localMatrixPtr = (double*)localMatrix;
-    for (int j = 0; j < 16; ++j)
-    {
-      node.localMatrix.m[j] = localMatrixPtr[j];
-    }
-    
     auto invBasePoseMatrix = fbxNode->EvaluateGlobalTransform().Inverse();
     auto invBasePoseMatrixPtr = (double*)invBasePoseMatrix;
     for (int j = 0; j < 16; ++j)
@@ -458,9 +451,6 @@ bool FBXLoader::LoadAnimation(const char* filepath)
   
   auto animLayer = animStack->GetMember<FbxAnimLayer>();
   
-  FbxTime time;
-  time.Set(FbxTime::GetOneFrameValue(FbxTime::eFrames60) * 2);
- 
   // ノード名からノードIDを取得できるように辞書に登録
   auto nodeCount = this->fbxSceneAnimation->GetNodeCount();
   printf("animationNodeCount: %d\n", nodeCount);
@@ -489,13 +479,6 @@ bool FBXLoader::LoadAnimation(const char* filepath)
     auto nodeId = this->nodeIdDictionary[fbxNode->GetName()];
     auto& node = this->nodeList[nodeId];
     node.animNodeId = i;
-    
-    auto localMatrix = fbxNode->EvaluateLocalTransform(time);
-    auto localMatrixPtr = (double*)localMatrix;
-    for (int j = 0; j < 16; ++j)
-    {
-      node.localMatrix.m[j] = localMatrixPtr[j];
-    }
     
     auto tmp = fbxNode->LclTranslation.Get();
     node.baseTrans = GLKVector3Make(tmp[0], tmp[1], tmp[2]);

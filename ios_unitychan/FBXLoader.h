@@ -77,8 +77,6 @@ struct ModelNode
   GLKVector3 baseScale;
   GLKMatrix4 invBaseposeMatrix;
   
-  GLKMatrix4 localMatrix;
-  
   int animNodeId;
 };
 
